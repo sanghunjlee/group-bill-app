@@ -1,3 +1,9 @@
+# python virtual environment
 /pyvenv.cfg
 /venv/
+
+# automatically created by pycharm
 /.idea/
+
+# test files
+/tests/
