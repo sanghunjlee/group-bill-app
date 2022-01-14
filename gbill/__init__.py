@@ -21,3 +21,8 @@ ERRORS = {
     DB_WRITE_ERROR: "database write error",
     ID_ERROR: "bill id error",
 }
+
+(
+    AMOUNT_FLAG,
+    PARTICIPANT_FLAG,
+) = range(2)
