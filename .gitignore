@@ -5,5 +5,8 @@
 # automatically created by pycharm
 /.idea/
 
+# hidden folders
+/.*
+
 # test files
 /tests/
