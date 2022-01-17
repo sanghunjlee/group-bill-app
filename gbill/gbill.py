@@ -25,8 +25,10 @@ class Biller:
                 participant_list.extend([a.strip() for a in _.split(',') if a.strip() != ''])
             else:
                 participant_list.append(_.strip())
+        participant_list = [_.capitalize() for _ in participant_list]
+        participant_list.sort()
         bill = {
-            'Participant': [_.capitalize() for _ in participant_list],
+            'Participant': participant_list,
             'Amount': amount,
         }
         read = self._db_handler.read_bills()
@@ -51,6 +53,15 @@ class Biller:
 
     def edit_participant(self, bill_id: int, participant: List[str]) -> CurrentBill:
         """Edit a bill's participant(s) with the new values"""
+        participant_list = []
+        for _ in participant:
+            _ = _.lower()
+            if ',' in _:
+                participant_list.extend([a.strip() for a in _.split(',') if a.strip() != ''])
+            else:
+                participant_list.append(_.strip())
+        participant_list = [_.capitalize() for _ in participant_list]
+        participant_list.sort()
         read = self._db_handler.read_bills()
         if read.error:
             return CurrentBill({}, read.error)
@@ -58,7 +69,7 @@ class Biller:
             bill = read.bill_list[bill_id - 1]
         except IndexError:
             return CurrentBill({}, ID_ERROR)
-        bill['Participant'] = participant
+        bill['Participant'] = participant_list
         write = self._db_handler.write_bills(read.bill_list)
         return CurrentBill(bill, write.error)
 

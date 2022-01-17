@@ -5,13 +5,27 @@ from pathlib import Path
 from typing import List, Optional
 import typer
 from gbill import (
-    ERRORS, AMOUNT_FLAG, PARTICIPANT_FLAG,
-    __app_name__, __version__,
-    config, db, gbill,
+    ERRORS, __app_name__, __version__, config, db, gbill,
 )
+
+
+VALID_TYPES = ['amount', 'participant']
+
 
 app = typer.Typer()
 
+def _type_complete(incomplete: str) -> str:
+    completion = []
+    for _ in VALID_TYPES:
+        if _.startswith(incomplete):
+            completion.append(_)
+    return completion
+
+
+def _type_callback(value: str) -> str:
+    if value.lower() not in VALID_TYPES:
+        raise typer.BadParameter(f'Please enter value from: {VALID_TYPES}')
+    return value
 
 @app.command()
 def init(
@@ -43,13 +57,13 @@ def init(
 
 @app.command()
 def add(
-    participant: List[str] = typer.Argument(...),
-    amount: float = typer.Option(
-        ...,
-        '--amount',
-        '-a',
-        min=0.00,
-    )
+        participant: List[str] = typer.Argument(...),
+        amount: float = typer.Option(
+            ...,
+            '--amount',
+            '-a',
+            min=0.00,
+        )
 ) -> None:
     """Add a new bill"""
     biller = get_bill()
@@ -66,6 +80,59 @@ def add(
             f"""with amount: ${amount:.2f}""",
             fg=typer.colors.GREEN,
         )
+
+
+@app.command(name='edit')
+def edit(
+        bill_id: int = typer.Argument(...),
+        edit_type: str = typer.Option(
+            ...,
+            prompt=f'Which value ({"|".join([_.capitalize() for _ in VALID_TYPES])})'
+                   f' do you want to edit?',
+            autocompletion=_type_complete,
+            callback=_type_callback,
+        )
+) -> None:
+    """Edit an existing bill"""
+    biller = get_bill()
+    if edit_type == VALID_TYPES[0]: # AMOUNT
+        new_amount = typer.prompt('Enter the new amount:')
+        try:
+            val_amount = float(new_amount)
+            bill, error = biller.edit_amount(bill_id, val_amount)
+            if error:
+                typer.secho(
+                    f'Editing bill (ID={bill_id}) failed with "{ERRORS[error]}"',
+                    fg=typer.colors.RED
+                )
+                raise typer.Exit(1)
+            else:
+                typer.secho(
+                    f"""Amount value of bill (ID={bill_id}) was edited: """
+                    f"""It is now: ${bill['Amount']:.2f}""",
+                    fg=typer.colors.GREEN,
+                )
+        except ValueError:
+            typer.secho(
+                f"""The new amount entered ({new_amount}) is not a number.""",
+                fg=typer.colors.RED
+            )
+            raise typer.Exit(1)
+    elif edit_type == VALID_TYPES[1]: # PARTICIPANT
+        new_val = typer.prompt('Enter the new participants list:')
+        bill, error = biller.edit_participant(bill_id, new_val)
+        if error:
+            typer.secho(
+                f'Editing bill (ID={bill_id}) failed with "{ERRORS[error]}"',
+                fg=typer.colors.RED
+            )
+            raise typer.Exit(1)
+        else:
+            typer.secho(
+                f"""Participant value of bill (ID={bill_id}) was edited: """
+                f"""It is now: {bill['Participant']}""",
+                fg=typer.colors.GREEN,
+            )
 
 
 @app.command(name='list')
@@ -91,7 +158,7 @@ def list_all() -> None:
         parts, amount = bill.values()
         typer.secho(
             f'{i}{(len(columns[0]) - len(str(i))) * " "}'
-            f'| ${amount:.2f}{(len(columns[1]) - len(str(round(amount, 2))) - 3) * " "}'
+            f'| ${amount:.2f}{(len(columns[1]) - len(str(int(amount))) - 6) * " "}'
             f'| {parts}',
             fg=typer.colors.BLUE,
         )
@@ -115,6 +182,8 @@ def get_bill() -> gbill.Biller:
             fg=typer.colors.RED,
         )
         raise typer.Exit(1)
+
+
 
 
 def _version_callback(value: bool) -> None:
