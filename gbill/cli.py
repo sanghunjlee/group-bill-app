@@ -2,7 +2,7 @@
 # gbill/cli.py
 
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Any, Optional
 import typer
 from gbill import (
     ERRORS, __app_name__, __version__, config, db, gbill,
@@ -14,7 +14,21 @@ VALID_TYPES = ['amount', 'participant']
 
 app = typer.Typer()
 
-def _type_complete(incomplete: str) -> str:
+
+def _add_file_callback(filepath: str) -> None:
+    if filepath:
+        typer.secho(
+            f'Importing from the file: {filepath}',
+            fg=typer.colors.BLUE
+        )
+        typer.secho(
+            f'Currently this feature is not implemented.',
+            fg=typer.colors.RED
+        )
+        raise typer.Exit()
+
+
+def _type_complete(incomplete: str) -> List[str]:
     completion = []
     for _ in VALID_TYPES:
         if _.startswith(incomplete):
@@ -26,6 +40,7 @@ def _type_callback(value: str) -> str:
     if value.lower() not in VALID_TYPES:
         raise typer.BadParameter(f'Please enter value from: {VALID_TYPES}')
     return value
+
 
 @app.command()
 def init(
@@ -57,17 +72,41 @@ def init(
 
 @app.command()
 def add(
-        participant: List[str] = typer.Argument(...),
-        amount: float = typer.Option(
-            ...,
-            '--amount',
-            '-a',
-            min=0.00,
+        filepath: Optional[str] = typer.Option(
+            None,
+            '--path',
+            '-p',
+            callback=_add_file_callback,
+            is_eager=True
         )
 ) -> None:
     """Add a new bill"""
+
+    def _get_input(prompt: str, force: bool = False) -> str:
+        while True:
+            ret = typer.prompt(prompt)
+            if ret.lower().strip() in ['q', 'quit', 'quit()']:
+                return ''
+            if force:
+                break
+            confirm = typer.confirm(f'Is the input {ret} correct?')
+            if confirm:
+                break
+        return ret
+
+    participant = _get_input('Enter participant(s) (separate each entry with ","): ')
+    amount = _get_input('Enter amount: ')
+
     biller = get_bill()
-    bill, error = biller.add(participant, amount)
+    try:
+        v_amount = float(amount)
+    except ValueError:
+        typer.secho(
+            f"""The new amount entered ({amount}) is not a number.""",
+            fg=typer.colors.RED
+        )
+        raise typer.Exit(1)
+    bill, error = biller.add([participant], v_amount)
     if error:
         typer.secho(
             f'Adding bill failed with "{ERRORS[error]}"',
@@ -77,7 +116,7 @@ def add(
     else:
         typer.secho(
             f"""bill: "{bill['Participant']}" was added """
-            f"""with amount: ${amount:.2f}""",
+            f"""with amount: ${bill['Amount']:.2f}""",
             fg=typer.colors.GREEN,
         )
 
@@ -99,25 +138,25 @@ def edit(
         new_amount = typer.prompt('Enter the new amount:')
         try:
             val_amount = float(new_amount)
-            bill, error = biller.edit_amount(bill_id, val_amount)
-            if error:
-                typer.secho(
-                    f'Editing bill (ID={bill_id}) failed with "{ERRORS[error]}"',
-                    fg=typer.colors.RED
-                )
-                raise typer.Exit(1)
-            else:
-                typer.secho(
-                    f"""Amount value of bill (ID={bill_id}) was edited: """
-                    f"""It is now: ${bill['Amount']:.2f}""",
-                    fg=typer.colors.GREEN,
-                )
         except ValueError:
             typer.secho(
                 f"""The new amount entered ({new_amount}) is not a number.""",
                 fg=typer.colors.RED
             )
             raise typer.Exit(1)
+        bill, error = biller.edit_amount(bill_id, val_amount)
+        if error:
+            typer.secho(
+                f'Editing bill (ID={bill_id}) failed with "{ERRORS[error]}"',
+                fg=typer.colors.RED
+            )
+            raise typer.Exit(1)
+        else:
+            typer.secho(
+                f"""Amount value of bill (ID={bill_id}) was edited: """
+                f"""It is now: ${bill['Amount']:.2f}""",
+                fg=typer.colors.GREEN,
+            )
     elif edit_type == VALID_TYPES[1]: # PARTICIPANT
         new_val = typer.prompt('Enter the new participants list:')
         bill, error = biller.edit_participant(bill_id, new_val)
@@ -257,8 +296,6 @@ def get_bill() -> gbill.Biller:
             fg=typer.colors.RED,
         )
         raise typer.Exit(1)
-
-
 
 
 def _version_callback(value: bool) -> None:
