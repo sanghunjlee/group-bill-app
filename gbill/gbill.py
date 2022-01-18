@@ -77,3 +77,20 @@ class Biller:
         """Return the current bill list"""
         read = self._db_handler.read_bills()
         return read.bill_list
+
+    def remove(self, bill_id) -> CurrentBill:
+        """Remove a bill from the database using its id or index"""
+        read = self._db_handler.read_bills()
+        if read.error:
+            return CurrentBill({}, read.error)
+        try:
+            bill = read.bill_list.pop(bill_id - 1)
+        except IndexError:
+            return CurrentBill({}, ID_ERROR)
+        write = self._db_handler.write_bills(read.bill_list)
+        return CurrentBill(bill, write.error)
+
+    def remove_all(self) -> CurrentBill:
+        """Remove all bills from the database."""
+        write = self._db_handler.write_bills(([]))
+        return CurrentBill({}, write.error)

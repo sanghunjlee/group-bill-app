@@ -165,6 +165,81 @@ def list_all() -> None:
     typer.secho('-' * len(headers) + '\n', fg=typer.colors.BLUE)
 
 
+@app.command()
+def remove(
+        bill_id: int = typer.Argument(...),
+        force: bool = typer.Option(
+            False,
+            '--force',
+            '-f',
+            help='Force deletion without confirmation.',
+        ),
+) -> None:
+    """Remove a bill using its BILL_ID"""
+    biller = get_bill()
+
+    def _remove():
+        bill, error = biller.remove(bill_id)
+        if error:
+            typer.secho(
+                f'Removing bill # {bill_id} failed with "{ERRORS[error]}"',
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        else:
+            typer.secho(
+                f'bill # {bill_id}: \'{bill}\' was removed',
+                fg=typer.colors.GREEN,
+            )
+
+    if force:
+        _remove()
+    else:
+        bill_list = biller.get_bill_list()
+        try:
+            bill = bill_list[bill_id-1]
+        except IndexError:
+            typer.secho(
+                'Invalid BILL_ID',
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        delete = typer.confirm(
+            f'Delete bill # {bill_id}: {bill}?'
+        )
+        if delete:
+            _remove()
+        else:
+            typer.echo('Operation canceled.')
+
+
+@app.command(name='clear')
+def remove_all(
+        force: bool = typer.Option(
+            ...,
+            prompt='Delete all bills?',
+            help='Force delete without confirmation.'
+        ),
+) -> None:
+    """Remove all bills."""
+    biller = get_bill()
+    if force:
+        error = biller.remove_all().error
+        if error:
+            typer.secho(
+                f'Removing bills failed with "{ERRORS[error]}"',
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(1)
+        else:
+            typer.secho(
+                'All bills were removed',
+                fg=typer.colors.GREEN
+            )
+    else:
+        typer.echo('Operation canceled')
+
+
 def get_bill() -> gbill.Biller:
     if config.CONFIG_FILE_PATH.exists():
         db_path = db.get_database_path(config.CONFIG_FILE_PATH)
