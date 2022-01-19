@@ -9,7 +9,7 @@ from gbill import (
 )
 
 
-VALID_TYPES = ['amount', 'participant']
+VALID_TYPES = ['amount', 'participant', 'payer']
 
 
 app = typer.Typer()
@@ -78,26 +78,15 @@ def add(
             '-p',
             callback=_add_file_callback,
             is_eager=True
-        )
+        ),
 ) -> None:
     """Add a new bill"""
 
-    def _get_input(prompt: str, force: bool = False) -> str:
-        while True:
-            ret = typer.prompt(prompt)
-            if ret.lower().strip() in ['q', 'quit', 'quit()']:
-                return ''
-            if force:
-                break
-            confirm = typer.confirm(f'Is the input {ret} correct?')
-            if confirm:
-                break
-        return ret
+    participant = parse_list(get_input('Enter participant(s) (separate each entry with ","): '))
+    payer = get_input('Enter payer: ', participant).lower().capitalize()
+    amount = get_input('Enter amount: ')
 
-    participant = _get_input('Enter participant(s) (separate each entry with ","): ')
-    amount = _get_input('Enter amount: ')
-
-    biller = get_bill()
+    biller = get_biller()
     try:
         v_amount = float(amount)
     except ValueError:
@@ -106,7 +95,7 @@ def add(
             fg=typer.colors.RED
         )
         raise typer.Exit(1)
-    bill, error = biller.add([participant], v_amount)
+    bill, error = biller.add(participant, payer, v_amount)
     if error:
         typer.secho(
             f'Adding bill failed with "{ERRORS[error]}"',
@@ -115,9 +104,14 @@ def add(
         raise typer.Exit(1)
     else:
         typer.secho(
-            f"""bill: "{bill['Participant']}" was added """
-            f"""with amount: ${bill['Amount']:.2f}""",
-            fg=typer.colors.GREEN,
+            f'bill was added successfully.',
+            fg=typer.colors.GREEN
+        )
+        typer.secho(
+            f'Participant: {bill["Participant"]}'
+            f'Payer: {bill["Payer"]}'
+            f'Amount: ${bill["Amount"]:.2f}',
+            fg=typer.colors.BLUE,
         )
 
 
@@ -133,9 +127,9 @@ def edit(
         )
 ) -> None:
     """Edit an existing bill"""
-    biller = get_bill()
-    if edit_type == VALID_TYPES[0]: # AMOUNT
-        new_amount = typer.prompt('Enter the new amount:')
+    biller = get_biller()
+    if edit_type == VALID_TYPES[0]:  # AMOUNT
+        new_amount = get_input('Enter the new amount:')
         try:
             val_amount = float(new_amount)
         except ValueError:
@@ -157,8 +151,8 @@ def edit(
                 f"""It is now: ${bill['Amount']:.2f}""",
                 fg=typer.colors.GREEN,
             )
-    elif edit_type == VALID_TYPES[1]: # PARTICIPANT
-        new_val = typer.prompt('Enter the new participants list:')
+    elif edit_type == VALID_TYPES[1]:  # PARTICIPANT
+        new_val = parse_list(get_input('Enter participant(s) (separate each entry with ","): '))
         bill, error = biller.edit_participant(bill_id, new_val)
         if error:
             typer.secho(
@@ -172,12 +166,28 @@ def edit(
                 f"""It is now: {bill['Participant']}""",
                 fg=typer.colors.GREEN,
             )
+    elif edit_type == VALID_TYPES[2]:  # PAYER
+        participant_list = biller.get_bill(bill_id).bill['Participant']
+        new_val = get_input('Enter payer: ', participant_list).lower().capitalize()
+        bill, error = biller.edit_payer(bill_id, new_val)
+        if error:
+            typer.secho(
+                f'Editing bill (ID={bill_id}) failed with "{ERRORS[error]}"',
+                fg=typer.colors.RED
+            )
+            raise typer.Exit(1)
+        else:
+            typer.secho(
+                f"""Payer of bill (ID={bill_id}) was edited: """
+                f"""It is now: {bill['Payer']}""",
+                fg=typer.colors.GREEN,
+            )
 
 
 @app.command(name='list')
 def list_all() -> None:
     """List all bills"""
-    biller = get_bill()
+    biller = get_biller()
     bill_list = biller.get_bill_list()
     if len(bill_list) == 0:
         typer.secho(
@@ -187,6 +197,7 @@ def list_all() -> None:
     typer.secho('\nbill list:\n', fg=typer.colors.BLUE, bold=True)
     columns = (
         'ID.  ',
+        '| Payer    ',
         '| Amount  ',
         '| Participants      ',
     )
@@ -194,10 +205,11 @@ def list_all() -> None:
     typer.secho(headers, fg=typer.colors.BLUE, bold=True)
     typer.secho('-' * len(headers), fg=typer.colors.BLUE)
     for i, bill in enumerate(bill_list, 1):
-        parts, amount = bill.values()
+        parts, payer, amount = bill.values()
         typer.secho(
             f'{i}{(len(columns[0]) - len(str(i))) * " "}'
-            f'| ${amount:.2f}{(len(columns[1]) - len(str(int(amount))) - 6) * " "}'
+            f'| {payer[:len(columns[1])]}{(len(columns[1]) - len(payer[:len(columns[1])]) - 2) * " "}'
+            f'| ${amount:.2f}{(len(columns[2]) - len(str(int(amount))) - 6) * " "}'
             f'| {parts}',
             fg=typer.colors.BLUE,
         )
@@ -215,7 +227,7 @@ def remove(
         ),
 ) -> None:
     """Remove a bill using its BILL_ID"""
-    biller = get_bill()
+    biller = get_biller()
 
     def _remove():
         bill, error = biller.remove(bill_id)
@@ -261,7 +273,7 @@ def remove_all(
         ),
 ) -> None:
     """Remove all bills."""
-    biller = get_bill()
+    biller = get_biller()
     if force:
         error = biller.remove_all().error
         if error:
@@ -279,7 +291,7 @@ def remove_all(
         typer.echo('Operation canceled')
 
 
-def get_bill() -> gbill.Biller:
+def get_biller() -> gbill.Biller:
     if config.CONFIG_FILE_PATH.exists():
         db_path = db.get_database_path(config.CONFIG_FILE_PATH)
     else:
@@ -296,6 +308,32 @@ def get_bill() -> gbill.Biller:
             fg=typer.colors.RED,
         )
         raise typer.Exit(1)
+
+
+def get_input(prompt: str, selection: List[str] = None, force: bool = False) -> str:
+    while True:
+        ret = typer.prompt(prompt)
+        if selection:
+            if ret.lower().strip() not in [_.lower() for _ in selection]:
+                typer.secho(
+                    f'Unexpected value: Please enter a value from {selection}.',
+                    fg=typer.colors.RED
+                )
+                continue
+        if ret.lower().strip() in ['q', 'quit', 'quit()']:
+            return ''
+        if force:
+            break
+        confirm = typer.confirm(f'Is the input {ret} correct?')
+        if confirm:
+            break
+    return ret
+
+
+def parse_list(inp_line: str, delim: str = ',') -> List[str]:
+    ret_list = [_.strip().capitalize() for _ in inp_line.lower().split(delim)]
+    ret_list.sort()
+    return ret_list
 
 
 def _version_callback(value: bool) -> None:
